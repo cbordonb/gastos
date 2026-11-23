@@ -19,7 +19,7 @@ button:focus-visible,input:focus-visible{outline:3px solid var(--or);outline-off
 .top{background:var(--sky);color:#10223a;padding:calc(14px + env(safe-area-inset-top)) max(16px,env(safe-area-inset-right)) 22px max(16px,env(safe-area-inset-left));border-radius:0 0 24px 24px}
 @media(prefers-color-scheme:dark){.top{color:#e8f1fa}}
 .tt{display:flex;justify-content:space-between;align-items:center}
-h1{font-size:20px;margin:0;font-weight:600}
+h1{font-size:clamp(16px,4.6vw,20px);margin:0;font-weight:600;white-space:nowrap}
 .ico{width:40px;height:40px;border:0;border-radius:50%;background:#ffffff40;font-size:18px}
 .seg{display:grid;grid-template-columns:1fr 1fr;background:#ffffff40;border-radius:14px;padding:4px;margin:16px 0 12px}
 .seg button{height:44px;border:0;border-radius:11px;background:none;font-weight:600;font-size:16px}
@@ -170,7 +170,7 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 .secs{display:grid;gap:14px}
 .sec h2:before{content:"";width:10px;height:10px;border-radius:50%;margin-right:8px;display:inline-block;background:var(--c)}
 .sec h2{justify-content:flex-start}
-.sec.g{--c:var(--or)}.sec.i{--c:var(--in)}.sec.a{--c:var(--ah)}.sec.b{--c:var(--ink)}
+.sec.p{--c:var(--sky)}.sec.g{--c:var(--or)}.sec.i{--c:var(--in)}.sec.a{--c:var(--ah)}.sec.b{--c:var(--ink)}
 .sheet[data-t=ingreso] .ok{background:#15803d;color:#fff}.sheet[data-t=ahorro] .ok{background:#1f78b4;color:#fff}
 .sheet[data-t=ingreso] .monto:focus-within{border-color:#15803d}.sheet[data-t=ahorro] .monto:focus-within{border-color:#1f78b4}
 .hin{max-width:1100px;margin:0 auto}
@@ -201,13 +201,15 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 .fcta{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;background:var(--chip);border-radius:14px;padding:12px;margin:8px 0}
 .fcta .w{grid-column:1/-1}.fcta .b2{grid-column:1/-1;display:flex;gap:8px}.fcta .b2 .btn{flex:1}
 .addc{width:100%;height:46px;border:1px dashed var(--line);border-radius:12px;background:none;color:var(--ah);font-weight:600;margin-top:12px}
+.tt{gap:10px}.tr{display:flex;align-items:center;gap:8px}
+.ctl .fl{flex-wrap:wrap;overflow:visible}
 .tas{font-size:14px;color:var(--soft);display:grid;gap:4px}
 </style></head><body>
 <div class="aviso" id="aviso" hidden></div>
 <div class="app">
 <header class="top"><div class="hin">
-  <div class="tt"><h1 id="titulo">Gastos de la casa</h1><button class="ico" id="recargar" aria-label="Actualizar">↻</button></div>
-  <div class="ctl" id="ctl"><div class="fl" id="fl" aria-label="País"></div><div class="mon" id="mon" aria-label="Moneda"></div></div>
+  <div class="tt"><h1 id="titulo">Gastos de la casa</h1><div class="tr"><div class="mon" id="mon" aria-label="Moneda"></div><button class="ico" id="recargar" aria-label="Actualizar">↻</button></div></div>
+  <div class="ctl" id="ctl"><div class="fl" id="fl" aria-label="País"></div></div>
   <div id="vperiodo">
     <div class="seg" id="modo"><button data-m="sem">Semana</button><button data-m="mes">Mes</button></div>
     <div class="pn"><button class="ico" id="prev" aria-label="Anterior">‹</button><div class="pl"><span id="plabel"></span><small><button class="hoy" id="hoy">Volver a hoy</button><span id="pact"></span></small></div><button class="ico" id="next" aria-label="Siguiente">›</button></div>
@@ -366,7 +368,7 @@ function confirmar(b,fn){if(b.dataset.ok){fn();return}b.dataset.ok=1;b.dataset.t
 function render(){
   for(const b of $('tabs').children)b.setAttribute('aria-pressed',b.dataset.v===vista);
   for(const v of ['mov','gra','res','pat','fij'])$('v-'+v).hidden=v!==vista;
-  $('vperiodo').hidden=vista!=='mov';$('ctl').hidden=vista==='fij';$('fab').hidden=vista==='mov';
+  $('vperiodo').hidden=vista!=='mov';$('ctl').hidden=vista==='fij';$('mon').hidden=vista==='fij';$('fab').hidden=vista==='mov';
   $('titulo').textContent={mov:'Gastos de la casa',gra:'Gráficos',res:'Resumen',pat:'Patrimonio',fij:'Ajustes'}[vista];
   const L=lugares();selL=selL.filter(l=>L.includes(l));
   $('fl').innerHTML=`<button data-s="" aria-pressed="${!selL.length}">Todos</button>`+L.map(l=>`<button data-s="${esc(l)}" aria-pressed="${selL.includes(l)}">${esc(l)}</button>`).join('');
@@ -394,7 +396,8 @@ function renderMov(){
       if(ty==='ahorro'&&destino(m)===c.id)sn+=v}}
   const fc=conS.map(c=>c.actualizado).filter(Boolean).sort().pop(),desdeC=fc?corto(new Date(fc)):'';
   const mov=Math.round(si)||Math.round(sg)||Math.round(sn);
-  $('bal').innerHTML=conS.length?`<span>Hoy tienen <b>${F0(S)}</b> en ${conS.length>1?'las cuentas':'la cuenta'}<br><small style="opacity:.8">${mov?`desde el ${desdeC}: entraron ${F0(si)} · se gastaron ${F0(sg)}${Math.round(sn)?' · pases entre cuentas '+F0(sn):''}`:`saldo cargado el ${desdeC} · se actualiza con lo que anoten`}</small></span>`
+  const inv=cuentas.filter(c=>(!selL.length||selL.includes(lugarDe(c)))&&c.tipo==='inversion'&&c.saldo!=null),IV=inv.reduce((s,c)=>s+enNZ(c),0);
+  $('bal').innerHTML=conS.length?`<span>Hoy tienen <b>${F0(S)}</b> en ${conS.length>1?'las cuentas':'la cuenta'}${inv.length?` · con inversiones <b>${F0(S+IV)}</b>`:''}<br><small style="opacity:.8">${mov?`desde el ${desdeC}: entraron ${F0(si)} · se gastaron ${F0(sg)}${Math.round(sn)?' · pases entre cuentas '+F0(sn):''}`:`saldo cargado el ${desdeC} · se actualiza con lo que anoten`}</small></span>`
     :`<span>Ingresos − gastos del período <b class="${cls(I-G)}">${F0(I-G)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver cuánta plata tienen.</small></span>`;
   $('vt').innerHTML=[['gasto','Gastos'],['ingreso','Ingresos'],['ahorro','Ahorros'],['todo','Todo']].map(([k,l])=>`<button data-ver="${k}" aria-pressed="${ver===k}">${l}</button>`).join('');
   const deTipo=items.filter(x=>ver==='todo'||tipoDe(x)===ver);
@@ -427,10 +430,12 @@ function renderRes(){
   const pc={};mm.filter(x=>tipoDe(x)==='gasto').forEach(x=>pc[x.cat]=(pc[x.cat]||0)+nz(x));const top=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
   const cmp=(a,b,u)=>!b?'':a===b?'igual que '+u:`${a>b?'▲':'▼'} ${F0(Math.abs(a-b))} vs ${u}`;
   const [ip]=promMes('ingreso',6),[ap]=promMes('ahorro',6);
-  const S=[['g','Gastos',[['Esta semana',F0(gs),cmp(gs,gs1,'la anterior')],['Este mes',F0(gm),cmp(gm,gm1,'el anterior')],['Promedio semanal',ns?F0(ps):'—',ns?'últimas '+ns+' semanas':'sin datos aún'],['Promedio mensual',nm?F0(pm):'—',nm?'últimos '+nm+' meses':'sin datos aún'],['Proyección del mes',F0(proy),'si siguen a este ritmo'],['Lo que más pesa',top?esc(top[0]):'—',top&&gm?F0(top[1])+' · '+Math.round(top[1]/gm*100)+'% del mes':'']]],
+  const cs=cuentas.filter(c=>!selL.length||selL.includes(lugarDe(c))),cd=cs.filter(c=>c.tipo!=='inversion'&&c.saldo!=null),ci=cs.filter(c=>c.tipo==='inversion'&&c.saldo!=null),sd=cd.reduce((s,c)=>s+enNZ(c),0),si2=ci.reduce((s,c)=>s+enNZ(c),0),sinS=cs.filter(c=>c.saldo==null).length;
+  const S=[['p','Plata en cuentas',[['Disponible',cd.length?F0(sd):'—',cd.map(c=>esc(c.nombre)).join(', ')||'sin saldos cargados'],['Inversiones',ci.length?F0(si2):'—',ci.map(c=>esc(c.nombre)).join(', ')],['Capital total',cd.length||ci.length?F0(sd+si2):'—',sinS?sinS+(sinS>1?' cuentas':' cuenta')+' sin saldo':'todo lo que tienen']]],['g','Gastos',[['Esta semana',F0(gs),cmp(gs,gs1,'la anterior')],['Este mes',F0(gm),cmp(gm,gm1,'el anterior')],['Promedio semanal',ns?F0(ps):'—',ns?'últimas '+ns+' semanas':'sin datos aún'],['Promedio mensual',nm?F0(pm):'—',nm?'últimos '+nm+' meses':'sin datos aún'],['Proyección del mes',F0(proy),'si siguen a este ritmo'],['Lo que más pesa',top?esc(top[0]):'—',top&&gm?F0(top[1])+' · '+Math.round(top[1]/gm*100)+'% del mes':'']]],
     ['i','Ingresos',[['Este mes',F0(im),cmp(im,suma(mes(-1),'ingreso'),'el anterior')],['Promedio mensual',ip?F0(ip):'—','']]],
     ['a','Ahorros',[['Este mes',F0(am),''],['Promedio mensual',ap?F0(ap):'—',''],['Total anotado',F0(suma(all,'ahorro')),'desde el principio']]],
     ['b','Resultado',[['Este mes',im?F0(bm):'—',im?'ingresos − gastos':'cargá los ingresos',im?cls(bm):'']]]];
+  if(!all.length)S.splice(1,0,['g','Sin movimientos',[['Todavía no hay gastos ni ingresos anotados'+(selL.length?' en '+esc(selL.join(', ')):''),'—','cuando anoten, aparecen acá']]]);
   $('kg').innerHTML=S.map(([c,t,ks])=>`<section class="card sec ${c}"><h2>${t}</h2><div class="kg">${ks.map(([l,v,s,k])=>`<div class="k"><span>${l}</span><b class="${k||''}">${v}</b><small>${s||''}</small></div>`).join('')}</div></section>`).join('');
   const pl={};mm.filter(x=>tipoDe(x)==='gasto').forEach(x=>{const k=lugarDe(cta(x.cuenta));pl[k]=(pl[k]||0)+nz(x)});
   barras($('lugar'),Object.entries(pl).sort((a,b)=>b[1]-a[1]));
