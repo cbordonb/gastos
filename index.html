@@ -383,10 +383,10 @@ function renderMov(){
     .map(([t,c,s,l,v,sub])=>`<button class="fc ${c}" data-ver="${t}" aria-pressed="${ver===t}"><span data-s="${s}">${l}</span><b>${v}</b><small>${sub}</small></button>`).join('')
     +`<button class="fc a" data-irpat="1"><span data-s="$">Saldo</span><b class="${S<0?'neg':''}">${conS.length?F0(S):'—'}</b><small>${conS.length?(conS.length<csel.length?'faltan saldos':'hoy, en '+conS.length+(conS.length>1?' cuentas':' cuenta')):'cargalo en Patrimonio'}</small></button>`;
   // Cuánto había al empezar el período y cuánto al terminar (o hoy), según los saldos y lo anotado
-  const ids=new Set(conS.map(c=>c.id)),fd=x=>x.fecha,neto=desdeF=>todosMovs.reduce((s,m)=>{if(fd(m)<desdeF)return s;const t=tipoDe(m),v=nz(m);
+  const ids=new Set(conS.map(c=>c.id)),fd=x=>x.fecha,neto=desdeF=>movs.reduce((s,m)=>{if(fd(m)<desdeF)return s;const t=tipoDe(m),v=nz(m);
     if(ids.has(m.cuenta))s+=t==='ingreso'?v:-v;if(t==='ahorro'&&ids.has(destino(m)))s+=v;return s},0);
-  const finP=mover(per,1),ini=S-neto(iso(per)),fin=act?S:S-neto(iso(finP)),res=I-G;
-  $('bal').innerHTML=conS.length?`<span>${act?'Empezaron '+(modo==='mes'?'el mes':'la semana'):'Al empezar'} con <b>${F0(ini)}</b> → ${act?'hoy tienen':'terminaron con'} <b>${F0(fin)}</b><br><small style="opacity:.8">${res>=0?'entró '+F0(res)+' más de lo que se gastó':'se gastó '+F0(-res)+' más de lo que entró'}${Math.round(fin-ini-res)?' · pases a ahorro: '+F0(fin-ini-res):''}</small></span>`
+  const st=desde&&desde>iso(per)?desde:iso(per),finP=mover(per,1),ini=S-neto(st),fin=act?S:S-neto(iso(finP)),res=I-G;
+  $('bal').innerHTML=conS.length?`<span>${st!==iso(per)?'El '+corto(parse(st))+' tenían':act?'Empezaron '+(modo==='mes'?'el mes':'la semana')+' con':'Al empezar tenían'} <b>${F0(ini)}</b> → ${act?'hoy tienen':'terminaron con'} <b>${F0(fin)}</b><br><small style="opacity:.8">${res>=0?'entró '+F0(res)+' más de lo que se gastó':'se gastó '+F0(-res)+' más de lo que entró'}${Math.round(fin-ini-res)?' · pases a ahorro: '+F0(fin-ini-res):''}</small></span>`
     :`<span>Resultado: ingresos − gastos <b class="${cls(res)}">${F0(res)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver con cuánto empezaron y cuánto tienen.</small></span>`;
   $('vt').innerHTML=[['gasto','Gastos'],['ingreso','Ingresos'],['ahorro','Ahorros'],['todo','Todo']].map(([k,l])=>`<button data-ver="${k}" aria-pressed="${ver===k}">${l}</button>`).join('');
   const deTipo=items.filter(x=>ver==='todo'||tipoDe(x)===ver);
