@@ -349,7 +349,7 @@ const nomMov=x=>tipoDe(x)==='ahorro'?(destino(x)?'Ahorro → '+cta(destino(x)).n
 // Saldo actual = saldo cargado + lo que entra − lo que sale, anotado después de cargarlo
 function saldoAct(c){
   if(c.saldo==null)return null;const t0=c.actualizado?Date.parse(c.actualizado):0;let s=+c.saldo;
-  for(const m of todosMovs){if((m.ts||0)<=t0)continue;const t=tipoDe(m),v=+m.monto||0;
+  const hoyS=iso(hoyD());for(const m of todosMovs){if((m.ts||0)<=t0||m.fecha>hoyS)continue;const t=tipoDe(m),v=+m.monto||0;
     if(m.cuenta===c.id)s+=t==='ingreso'?v:-v;
     if(t==='ahorro'&&destino(m)===c.id)s+=v*(m.tasa||T[m.moneda]||1)/(T[c.moneda]||1);}
   return s}
@@ -382,12 +382,13 @@ function renderMov(){
   $('flow').innerHTML=[['gasto','g','−','Gastos',F0(G),Ga?`${G>Ga?'▲':'▼'} ${F0(Math.abs(G-Ga))} vs anterior`:F0(G/dias)+' por día'],['ingreso','i','+','Ingresos',F0(I),mv(n('ingreso'))]]
     .map(([t,c,s,l,v,sub])=>`<button class="fc ${c}" data-ver="${t}" aria-pressed="${ver===t}"><span data-s="${s}">${l}</span><b>${v}</b><small>${sub}</small></button>`).join('')
     +`<button class="fc a" data-irpat="1"><span data-s="$">Saldo</span><b class="${S<0?'neg':''}">${conS.length?F0(S):'—'}</b><small>${conS.length?(conS.length<csel.length?'faltan saldos':'hoy, en '+conS.length+(conS.length>1?' cuentas':' cuenta')):'cargalo en Patrimonio'}</small></button>`;
-  // Cuánto había al empezar el período y cuánto al terminar (o hoy), según los saldos y lo anotado
-  const ids=new Set(conS.map(c=>c.id)),fd=x=>x.fecha,neto=desdeF=>movs.reduce((s,m)=>{if(fd(m)<desdeF)return s;const t=tipoDe(m),v=nz(m);
-    if(ids.has(m.cuenta))s+=t==='ingreso'?v:-v;if(t==='ahorro'&&ids.has(destino(m)))s+=v;return s},0);
-  const st=desde&&desde>iso(per)?desde:iso(per),finP=mover(per,1),ini=S-neto(st),fin=act?S:S-neto(iso(finP)),res=I-G;
-  $('bal').innerHTML=conS.length?`<span>${st!==iso(per)?'El '+corto(parse(st))+' tenían':act?'Empezaron '+(modo==='mes'?'el mes':'la semana')+' con':'Al empezar tenían'} <b>${F0(ini)}</b> → ${act?'hoy tienen':'terminaron con'} <b>${F0(fin)}</b><br><small style="opacity:.8">${res>=0?'entró '+F0(res)+' más de lo que se gastó':'se gastó '+F0(-res)+' más de lo que entró'}${Math.round(fin-ini-res)?' · pases a ahorro: '+F0(fin-ini-res):''}</small></span>`
-    :`<span>Resultado: ingresos − gastos <b class="${cls(res)}">${F0(res)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver con cuánto empezaron y cuánto tienen.</small></span>`;
+  // Cuánto había al empezar el período y cuánto hay hoy (o al terminar), con las mismas cuentas y movimientos
+  const ids=new Set(conS.map(c=>c.id)),hoyS=iso(hoyD()),finP=mover(per,1),st=desde&&desde>iso(per)?desde:iso(per);
+  const flujo=(a,b)=>{let i=0,g=0,t=0;for(const m of movs){if(m.fecha<a||m.fecha>b)continue;const ty=tipoDe(m),v=nz(m);
+    if(ids.has(m.cuenta)){if(ty==='ingreso')i+=v;else if(ty==='gasto')g+=v;else t+=v}if(ty==='ahorro'&&ids.has(destino(m)))t-=v}return{i,g,t,n:i-g-t}};
+  const p=flujo(st,act?hoyS:iso(add(finP,-1))),fin=act?S:S-flujo(iso(finP),hoyS).n,ini=fin-p.n,dif=p.i-p.g;
+  $('bal').innerHTML=conS.length?`<span>${st!==iso(per)?'El '+corto(parse(st))+' tenían':act?'Empezaron '+(modo==='mes'?'el mes':'la semana')+' con':'Al empezar tenían'} <b>${F0(ini)}</b> → ${act?'hoy tienen':'terminaron con'} <b>${F0(fin)}</b><br><small style="opacity:.8">${dif>=0?'entró '+F0(dif)+' más de lo que se gastó':'se gastó '+F0(-dif)+' más de lo que entró'}${Math.round(p.t)?(p.t>0?' · pasaron '+F0(p.t)+' a otras cuentas':' · llegaron '+F0(-p.t)+' de otras cuentas'):''}</small></span>`
+    :`<span>Resultado: ingresos − gastos <b class="${cls(I-G)}">${F0(I-G)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver con cuánto empezaron y cuánto tienen.</small></span>`;
   $('vt').innerHTML=[['gasto','Gastos'],['ingreso','Ingresos'],['ahorro','Ahorros'],['todo','Todo']].map(([k,l])=>`<button data-ver="${k}" aria-pressed="${ver===k}">${l}</button>`).join('');
   const deTipo=items.filter(x=>ver==='todo'||tipoDe(x)===ver);
   $('rtit').textContent={gasto:'En qué se gastó',ingreso:'De dónde entró',ahorro:'Adónde se ahorró',todo:'En qué se gastó'}[ver];
