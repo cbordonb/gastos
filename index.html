@@ -197,6 +197,10 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 .setup form{background:var(--card);border-radius:22px;padding:22px;max-width:440px;width:100%;display:grid;gap:12px;box-shadow:0 10px 40px #0003}
 .setup img{width:64px;height:64px;border-radius:16px}
 .setup h2{margin:0;font-size:22px}.setup p{margin:0;color:var(--soft);font-size:15px}
+.grp .lnk{margin-left:8px}
+.fcta{grid-column:1/-1;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;background:var(--chip);border-radius:14px;padding:12px;margin:8px 0}
+.fcta .w{grid-column:1/-1}.fcta .b2{grid-column:1/-1;display:flex;gap:8px}.fcta .b2 .btn{flex:1}
+.addc{width:100%;height:46px;border:1px dashed var(--line);border-radius:12px;background:none;color:var(--ah);font-weight:600;margin-top:12px}
 .tas{font-size:14px;color:var(--soft);display:grid;gap:4px}
 </style></head><body>
 <div class="aviso" id="aviso" hidden></div>
@@ -512,14 +516,33 @@ document.addEventListener('click',e=>{const t=e.target.closest('[data-pjc],[data
 $('pjm').oninput=()=>{pjM=$('pjm').value;LS('pjm',pjM);renderPj()};
 $('pji').onchange=()=>{pjI=$('pji').checked;LS('pji',pjI?'1':'0');renderPj()};
 
-let editSaldo='';
+let editSaldo='',fC=null;
+function formCuenta(){const c=fC,ms=monedas.map(m=>`<option${m===c.moneda?' selected':''}>${m}</option>`).join(''),
+  ts=Object.entries(TIPOC).map(([k,v])=>`<option value="${k}"${k===c.tipo?' selected':''}>${v}</option>`).join('');
+  return `<div class="fcta"><input class="w" type="text" id="fcn" maxlength="40" placeholder="Nombre, ej: ASB ahorro" value="${esc(c.nombre||'')}">
+  <input type="text" id="fcl" maxlength="40" placeholder="País o lugar" value="${esc(c.lugar||'')}"><select id="fcm" aria-label="Moneda">${ms}</select>
+  <select class="w" id="fct" aria-label="Tipo">${ts}</select>
+  ${c.id?'':'<input class="w" type="text" inputmode="decimal" id="fcs" placeholder="Saldo de hoy (opcional)">'}
+  <div class="b2"><button class="btn" data-fcno="1" style="background:var(--card);color:var(--ink)">Cancelar</button><button class="btn" data-fcok="1">${c.id?'Guardar cambios':'Agregar cuenta'}</button></div>
+  ${c.id?`<button class="del" data-dcu="${esc(c.id)}">Borrar esta cuenta</button>`:''}</div>`}
+async function guardarCuenta(){
+  const c={id:fC.id||'',nombre:$('fcn').value.trim(),lugar:$('fcl').value.trim(),moneda:$('fcm').value,tipo:$('fct').value};
+  if(!c.nombre){$('fcn').focus();return}
+  const sal=fC.id?NaN:leerMonto($('fcs').value);
+  try{
+    const id=await run('saveCuenta',c);
+    if(fC.id)Object.assign(cuentas.find(x=>x.id===fC.id),c);
+    else{c.id=id;c.saldo=null;c.actualizado='';cuentas.push(c);
+      if(!isNaN(sal)){await run('setSaldo',id,sal);c.saldo=sal;c.actualizado=new Date().toISOString()}}
+    toast(fC.id?'Cuenta guardada':'Cuenta agregada');fC=null;render();if(!T[c.moneda])cargar();
+  }catch(err){toast('No se pudo guardar')}}
 function renderPat(){
   const cs=cuentas.filter(c=>!selL.length||selL.includes(lugarDe(c))),val=enNZ;
   $('ptot').textContent=F0(cs.reduce((s,c)=>s+val(c),0));
   const sin=cs.filter(c=>c.saldo==null).length;
   $('pnota').textContent=(sin?`${sin} cuenta${sin>1?'s':''} sin saldo cargado · `:'')+'saldos al día con lo anotado, en '+DC;
   const grupos={};cs.forEach(c=>(grupos[lugarDe(c)]=grupos[lugarDe(c)]||[]).push(c));
-  $('plist').innerHTML=Object.entries(grupos).map(([l,arr])=>`<div class="grp"><span>${esc(l)}</span><span>${F0(arr.reduce((s,c)=>s+val(c),0))}</span></div>`+arr.map(c=>`<div class="cta"><div>${esc(c.nombre)}<br><small>${TIPOC[c.tipo]||''}${c.actualizado?' · cargado el '+corto(new Date(c.actualizado))+(Math.round(saldoAct(c))!==Math.round(c.saldo)?' + movimientos':''):''}</small></div><div class="r"><div class="s">${c.saldo==null?'—':fmt(saldoAct(c),c.moneda,0)}</div><small>${c.moneda!==DC&&c.saldo!=null?'≈ '+F0(val(c)):''}</small><br><button class="lnk" data-sal="${esc(c.id)}">${c.saldo==null?'Cargar saldo':'Actualizar'}</button></div>${editSaldo===c.id?`<div class="ed"><input type="text" inputmode="decimal" id="nsal" placeholder="Saldo en ${c.moneda}" value="${c.saldo==null?'':Math.round(saldoAct(c)*100)/100}"><button class="btn" data-salok="${esc(c.id)}">Guardar</button></div>`:''}</div>`).join('')).join('')||'<div class="vacio">No hay cuentas elegidas.</div>';
+  $('plist').innerHTML=Object.entries(grupos).map(([l,arr])=>`<div class="grp"><span>${esc(l)}<button class="lnk" data-addc="${esc(l)}">+ cuenta</button></span><span>${F0(arr.reduce((s,c)=>s+val(c),0))}</span></div>${fC&&!fC.id&&fC.lugar===l?formCuenta():''}`+arr.map(c=>`<div class="cta"><div>${esc(c.nombre)} <button class="lnk" data-edc="${esc(c.id)}">Editar</button><br><small>${TIPOC[c.tipo]||''}${c.actualizado?' · cargado el '+corto(new Date(c.actualizado))+(Math.round(saldoAct(c))!==Math.round(c.saldo)?' + movimientos':''):''}</small></div><div class="r"><div class="s">${c.saldo==null?'—':fmt(saldoAct(c),c.moneda,0)}</div><small>${c.moneda!==DC&&c.saldo!=null?'≈ '+F0(val(c)):''}</small><br><button class="lnk" data-sal="${esc(c.id)}">${c.saldo==null?'Cargar saldo':'Actualizar'}</button></div>${editSaldo===c.id?`<div class="ed"><input type="text" inputmode="decimal" id="nsal" placeholder="Saldo en ${c.moneda}" value="${c.saldo==null?'':Math.round(saldoAct(c)*100)/100}"><button class="btn" data-salok="${esc(c.id)}">Guardar</button></div>`:''}${fC&&fC.id===c.id?formCuenta():''}</div>`).join('')).join('')+(fC&&!fC.id&&!Object.keys(grupos).includes(fC.lugar)?formCuenta():'')+`<button class="addc" data-addc="">+ Agregar cuenta en otro país o lugar</button>`;
   renderPj();
   if(editSaldo){const i=$('nsal');if(i){i.focus();i.onkeydown=e=>{if(e.key==='Enter')document.querySelector('[data-salok]').click()}}}
   $('tas').innerHTML=monedas.filter(m=>m!=='NZD'&&T[m]&&(cuentas.some(c=>c.moneda===m)||['USD','UYU'].includes(m))).map(m=>`<div>1 ${m} = ${fmt(T[m],'NZD',T[m]<.1?4:2)} · 1 NZD = ${(1/T[m]).toLocaleString('es-UY',{maximumFractionDigits:2})} ${m}</div>`).join('')+`<small>${Tfecha?'Actualizado '+new Date(Tfecha).toLocaleString('es-UY',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Sin datos de cotización'} · Se actualiza solo cada 6 horas. Cada gasto guarda la cotización del día en que se anotó; los saldos usan la de hoy.</small>`;
@@ -619,10 +642,14 @@ $('ncok').onclick=async()=>{
   $('ncok').disabled=false;
 };
 document.addEventListener('click',async e=>{
-  const t=e.target.closest('[data-f],[data-e],[data-dr],[data-dc],[data-addb],[data-dcu],[data-sal],[data-salok]');if(!t)return;
+  const t=e.target.closest('[data-f],[data-e],[data-dr],[data-dc],[data-addb],[data-dcu],[data-sal],[data-salok],[data-addc],[data-edc],[data-fcno],[data-fcok]');if(!t)return;
   const d=t.dataset;
   if(d.f!==undefined){filtro=filtro===d.f?'':d.f;render();return}
   if(d.e){const m=movs.find(x=>x.id===d.e);if(m)abrir(m);return}
+  if(d.addc!==undefined){const l=d.addc,mon=(cuentas.find(c=>lugarDe(c)===l)||{}).moneda||'NZD';fC=fC&&!fC.id&&fC.lugar===l?null:{lugar:l,moneda:mon,tipo:'ahorro'};editSaldo='';render();setTimeout(()=>{const i=$('fcn');if(i)i.focus()},0);return}
+  if(d.edc){fC=fC&&fC.id===d.edc?null:{...cuentas.find(c=>c.id===d.edc)};editSaldo='';render();return}
+  if(d.fcno){fC=null;render();return}
+  if(d.fcok){guardarCuenta();return}
   if(d.sal){editSaldo=editSaldo===d.sal?'':d.sal;render();return}
   if(d.salok){const v=leerMonto($('nsal').value);if(isNaN(v)){$('nsal').focus();return}const c=cuentas.find(x=>x.id===d.salok),a={...c};
     c.saldo=v;c.actualizado=new Date().toISOString();editSaldo='';render();
@@ -630,7 +657,7 @@ document.addEventListener('click',async e=>{
   if(d.dr)return confirmar(t,async()=>{const id=d.dr,a=recs;recs=recs.filter(r=>r.id!==id);render();try{await run('delRec',id);toast('Ya no se repite')}catch(err){recs=a;render();toast('No se pudo quitar')}});
   if(d.dc)return confirmar(t,async()=>{const k=d.dc,n=d.n;cats[k]=cats[k].filter(c=>c!==n);render();try{await run('delCat',k,n)}catch(err){toast('No se pudo borrar')}});
   if(d.dcu){if(movs.some(m=>m.cuenta===d.dcu)||recs.some(r=>r.cuenta===d.dcu)){toast('Tiene movimientos: no se puede borrar');return}
-    return confirmar(t,async()=>{const a=cuentas;cuentas=cuentas.filter(c=>c.id!==d.dcu);render();try{await run('delCuenta',d.dcu)}catch(err){cuentas=a;render();toast('No se pudo borrar')}})}
+    return confirmar(t,async()=>{const a=cuentas;cuentas=cuentas.filter(c=>c.id!==d.dcu);fC=null;render();try{await run('delCuenta',d.dcu)}catch(err){cuentas=a;render();toast('No se pudo borrar')}})}
   if(d.addb){const k=d.addb,i=document.querySelector(`[data-add="${k}"]`);await nuevaCat(k,i.value,i);render()}
 });
 document.addEventListener('keydown',e=>{const i=e.target.closest&&e.target.closest('[data-add]');if(i&&e.key==='Enter'){document.querySelector(`[data-addb="${i.dataset.add}"]`).click()}});
