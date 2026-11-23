@@ -382,13 +382,16 @@ function renderMov(){
   $('flow').innerHTML=[['gasto','g','−','Gastos',F0(G),Ga?`${G>Ga?'▲':'▼'} ${F0(Math.abs(G-Ga))} vs anterior`:F0(G/dias)+' por día'],['ingreso','i','+','Ingresos',F0(I),mv(n('ingreso'))]]
     .map(([t,c,s,l,v,sub])=>`<button class="fc ${c}" data-ver="${t}" aria-pressed="${ver===t}"><span data-s="${s}">${l}</span><b>${v}</b><small>${sub}</small></button>`).join('')
     +`<button class="fc a" data-irpat="1"><span data-s="$">Saldo</span><b class="${S<0?'neg':''}">${conS.length?F0(S):'—'}</b><small>${conS.length?(conS.length<csel.length?'faltan saldos':'hoy, en '+conS.length+(conS.length>1?' cuentas':' cuenta')):'cargalo en Patrimonio'}</small></button>`;
-  // Cuánto había al empezar el período y cuánto hay hoy (o al terminar), con las mismas cuentas y movimientos
-  const ids=new Set(conS.map(c=>c.id)),hoyS=iso(hoyD()),finP=mover(per,1),st=desde&&desde>iso(per)?desde:iso(per);
-  const flujo=(a,b)=>{let i=0,g=0,t=0;for(const m of movs){if(m.fecha<a||m.fecha>b)continue;const ty=tipoDe(m),v=nz(m);
-    if(ids.has(m.cuenta)){if(ty==='ingreso')i+=v;else if(ty==='gasto')g+=v;else t+=v}if(ty==='ahorro'&&ids.has(destino(m)))t-=v}return{i,g,t,n:i-g-t}};
-  const p=flujo(st,act?hoyS:iso(add(finP,-1))),fin=act?S:S-flujo(iso(finP),hoyS).n,ini=fin-p.n,dif=p.i-p.g;
-  $('bal').innerHTML=conS.length?`<span>${st!==iso(per)?'El '+corto(parse(st))+' tenían':act?'Empezaron '+(modo==='mes'?'el mes':'la semana')+' con':'Al empezar tenían'} <b>${F0(ini)}</b> → ${act?'hoy tienen':'terminaron con'} <b>${F0(fin)}</b><br><small style="opacity:.8">${dif>=0?'entró '+F0(dif)+' más de lo que se gastó':'se gastó '+F0(-dif)+' más de lo que entró'}${Math.round(p.t)?(p.t>0?' · pasaron '+F0(p.t)+' a otras cuentas':' · llegaron '+F0(-p.t)+' de otras cuentas'):''}</small></span>`
-    :`<span>Resultado: ingresos − gastos <b class="${cls(I-G)}">${F0(I-G)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver con cuánto empezaron y cuánto tienen.</small></span>`;
+  // Plata en las cuentas: se cuenta desde que se cargó cada saldo (no hay datos de antes)
+  let si=0,sg=0,sn=0;const hoyS=iso(hoyD());
+  for(const c of conS){const t0=c.actualizado?Date.parse(c.actualizado):0;
+    for(const m of todosMovs){if((m.ts||0)<=t0||m.fecha>hoyS)continue;const ty=tipoDe(m),v=nz(m);
+      if(m.cuenta===c.id){if(ty==='ingreso')si+=v;else if(ty==='gasto')sg+=v;else sn-=v}
+      if(ty==='ahorro'&&destino(m)===c.id)sn+=v}}
+  const fc=conS.map(c=>c.actualizado).filter(Boolean).sort().pop(),desdeC=fc?corto(new Date(fc)):'';
+  const mov=Math.round(si)||Math.round(sg)||Math.round(sn);
+  $('bal').innerHTML=conS.length?`<span>Hoy tienen <b>${F0(S)}</b> en ${conS.length>1?'las cuentas':'la cuenta'}<br><small style="opacity:.8">${mov?`desde el ${desdeC}: entraron ${F0(si)} · se gastaron ${F0(sg)}${Math.round(sn)?' · pases entre cuentas '+F0(sn):''}`:`saldo cargado el ${desdeC} · se actualiza con lo que anoten`}</small></span>`
+    :`<span>Ingresos − gastos del período <b class="${cls(I-G)}">${F0(I-G)}</b><br><small style="opacity:.8">Cargá los saldos en Patrimonio para ver cuánta plata tienen.</small></span>`;
   $('vt').innerHTML=[['gasto','Gastos'],['ingreso','Ingresos'],['ahorro','Ahorros'],['todo','Todo']].map(([k,l])=>`<button data-ver="${k}" aria-pressed="${ver===k}">${l}</button>`).join('');
   const deTipo=items.filter(x=>ver==='todo'||tipoDe(x)===ver);
   $('rtit').textContent={gasto:'En qué se gastó',ingreso:'De dónde entró',ahorro:'Adónde se ahorró',todo:'En qué se gastó'}[ver];
