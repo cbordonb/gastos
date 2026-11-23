@@ -233,7 +233,7 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 <main class="wrap" id="v-res" hidden>
   <div class="secs" id="kg"></div>
   <section class="card sec g"><h2>Gastos por país este mes</h2><div id="lugar"></div></section>
-  <section class="card"><h2>Mes a mes <small id="tmc" style="font-size:13px;color:var(--soft);font-weight:500"></small></h2><div class="scroll"><table><thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Ahorros</th><th>Balance</th></tr></thead><tbody id="tm"></tbody></table></div></section>
+  <section class="card"><h2>Mes a mes <small id="tmc" style="font-size:13px;color:var(--soft);font-weight:500"></small></h2><div class="scroll"><table><thead><tr><th>Mes</th><th>Ingresos</th><th>Gastos</th><th>Ahorros</th><th>Resultado</th></tr></thead><tbody id="tm"></tbody></table></div></section>
 </main>
 
 <main class="wrap" id="v-pat" hidden>
@@ -275,7 +275,8 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 <div class="ov" id="ov"><form class="sheet" id="f" autocomplete="off">
   <h2><span id="ftit">Anotar</span><button type="button" class="ico" id="cerrar" aria-label="Cerrar" style="background:var(--chip)">✕</button></h2>
   <div class="tipo" id="ftipo"><button type="button" data-t="gasto">Gasto</button><button type="button" data-t="ingreso">Ingreso</button><button type="button" data-t="ahorro">Ahorro</button></div>
-  <div><div class="lb">Cuenta</div><div class="chips" id="fcu"></div></div>
+  <div><div class="lb" id="fculb">Cuenta</div><div class="chips" id="fcu"></div></div>
+  <div id="fdestw" hidden><div class="lb">Va a</div><div class="chips" id="fdest"></div></div>
   <label class="monto"><span id="fsim">NZ$</span><input id="monto" type="text" inputmode="decimal" placeholder="0" aria-label="Monto"></label>
   <div class="conv" id="fconv"></div>
   <div id="fcatw"><div class="lb">Categoría</div><div class="chips" id="fcat"></div>
@@ -300,7 +301,7 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 <script>
 {
 const $=id=>document.getElementById(id);
-const DESDE_DEF='2026-11-19';let desde=(()=>{try{return localStorage.getItem('gdesde')||DESDE_DEF}catch(e){return DESDE_DEF}})(),ocultos=0;
+const DESDE_DEF='2026-11-19';let todosMovs=[];let desde=(()=>{try{return localStorage.getItem('gdesde')||DESDE_DEF}catch(e){return DESDE_DEF}})(),ocultos=0;
 let CFG=null;try{CFG=JSON.parse(localStorage.getItem('gcfg')||'null')}catch(e){}
 async function llamar(cfg,fn,a){
   const r=await fetch(cfg.u,{method:'POST',body:JSON.stringify({k:cfg.k,fn,a})});
@@ -342,6 +343,17 @@ const delMes=d=>rango(new Date(d.getFullYear(),d.getMonth(),1),new Date(d.getFul
 const suma=(a,t)=>a.reduce((s,g)=>s+(!t||tipoDe(g)===t?nz(g):0),0);
 const nomPer=p=>modo==='mes'?MESL[p.getMonth()].replace(/^./,c=>c.toUpperCase())+' '+p.getFullYear():corto(p)+' al '+corto(add(p,6));
 const cls=b=>b<0?'neg':'in';
+// Ahorro = pasar plata de una cuenta (cuenta) a otra (cat guarda el id de la cuenta destino)
+const destino=x=>tipoDe(x)==='ahorro'&&cuentas.some(c=>c.id===x.cat)?x.cat:'';
+const nomMov=x=>tipoDe(x)==='ahorro'?(destino(x)?'Ahorro → '+cta(destino(x)).nombre:'Ahorro'):x.cat;
+// Saldo actual = saldo cargado + lo que entra − lo que sale, anotado después de cargarlo
+function saldoAct(c){
+  if(c.saldo==null)return null;const t0=c.actualizado?Date.parse(c.actualizado):0;let s=+c.saldo;
+  for(const m of todosMovs){if((m.ts||0)<=t0)continue;const t=tipoDe(m),v=+m.monto||0;
+    if(m.cuenta===c.id)s+=t==='ingreso'?v:-v;
+    if(t==='ahorro'&&destino(m)===c.id)s+=v*(m.tasa||T[m.moneda]||1)/(T[c.moneda]||1);}
+  return s}
+const enNZ=c=>(saldoAct(c)||0)*(T[c.moneda]||1);
 const barras=(el,o)=>{const mx=o.length?o[0][1]:1;el.innerHTML=o.length?o.map(([c,v])=>`<div class="rp"><span>${esc(c)}</span><span class="t"><i style="width:${v/mx*100}%"></i></span><span class="v">${F0(v)}</span></div>`).join(''):'<div class="vacio">Sin gastos este mes.</div>'};
 function toast(t){$('toast').textContent=t;$('toast').classList.add('on');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.remove('on'),2200)}
 function aviso(t){$('aviso').textContent=t;$('aviso').hidden=!t}
@@ -366,14 +378,16 @@ function renderMov(){
   $('plabel').textContent=nomPer(per);$('hoy').hidden=act;$('pact').textContent=act?(modo==='mes'?'Este mes':'Esta semana'):'';$('next').disabled=act;
   const dias=modo==='mes'?(act?hoyD().getDate():new Date(per.getFullYear(),per.getMonth()+1,0).getDate()):(act?Math.round((hoyD()-per)/864e5)+1:7);
   const n=t=>items.filter(x=>tipoDe(x)===t).length,mv=c=>c+(c===1?' movimiento':' movimientos');
-  $('flow').innerHTML=[['gasto','g','−','Gastos',G,Ga?`${G>Ga?'▲':'▼'} ${F0(Math.abs(G-Ga))} vs anterior`:F0(G/dias)+' por día'],['ingreso','i','+','Ingresos',I,mv(n('ingreso'))],['ahorro','a','$','Ahorros',A,mv(n('ahorro'))]]
-    .map(([t,c,s,l,v,sub])=>`<button class="fc ${c}" data-ver="${t}" aria-pressed="${ver===t}"><span data-s="${s}">${l}</span><b>${F0(v)}</b><small>${sub}</small></button>`).join('');
-  const fin=modo==='mes'?per:add(per,6),mm=delMes(fin),mi=suma(mm,'ingreso'),mb=mi-suma(mm,'gasto')-suma(mm,'ahorro');
-  $('bal').innerHTML=mi?`<span>Balance de ${MESL[fin.getMonth()]}${act?' (en lo que va)':''}<br><small style="opacity:.8">ingresos − gastos − ahorros</small></span><b class="${cls(mb)}">${F0(mb)}</b>`:`<span>Cargá los ingresos de ${MESL[fin.getMonth()]} para ver el balance.</span>`;
+  const csel=cuentas.filter(c=>(!selL.length||selL.includes(lugarDe(c)))&&c.tipo!=='inversion'),conS=csel.filter(c=>c.saldo!=null),S=conS.reduce((s,c)=>s+enNZ(c),0);
+  $('flow').innerHTML=[['gasto','g','−','Gastos',F0(G),Ga?`${G>Ga?'▲':'▼'} ${F0(Math.abs(G-Ga))} vs anterior`:F0(G/dias)+' por día'],['ingreso','i','+','Ingresos',F0(I),mv(n('ingreso'))]]
+    .map(([t,c,s,l,v,sub])=>`<button class="fc ${c}" data-ver="${t}" aria-pressed="${ver===t}"><span data-s="${s}">${l}</span><b>${v}</b><small>${sub}</small></button>`).join('')
+    +`<button class="fc a" data-irpat="1"><span data-s="$">Saldo</span><b class="${S<0?'neg':''}">${conS.length?F0(S):'—'}</b><small>${conS.length?(conS.length<csel.length?'faltan saldos':'hoy, en '+conS.length+(conS.length>1?' cuentas':' cuenta')):'cargalo en Patrimonio'}</small></button>`;
+  const fin=modo==='mes'?per:add(per,6),mm=delMes(fin),mi=suma(mm,'ingreso'),mb=mi-suma(mm,'gasto');
+  $('bal').innerHTML=`<span>Resultado de ${MESL[fin.getMonth()]}${act?' (en lo que va)':''}<br><small style="opacity:.8">ingresos − gastos</small></span><b class="${cls(mb)}">${F0(mb)}</b>`;
   $('vt').innerHTML=[['gasto','Gastos'],['ingreso','Ingresos'],['ahorro','Ahorros'],['todo','Todo']].map(([k,l])=>`<button data-ver="${k}" aria-pressed="${ver===k}">${l}</button>`).join('');
   const deTipo=items.filter(x=>ver==='todo'||tipoDe(x)===ver);
-  $('rtit').textContent={gasto:'En qué se gastó',ingreso:'De dónde entró',ahorro:'Dónde se ahorró',todo:'En qué se gastó'}[ver];
-  const tb=ver==='todo'?'gasto':ver,pc={},key=x=>tb==='ahorro'?cta(x.cuenta).nombre:x.cat;
+  $('rtit').textContent={gasto:'En qué se gastó',ingreso:'De dónde entró',ahorro:'Adónde se ahorró',todo:'En qué se gastó'}[ver];
+  const tb=ver==='todo'?'gasto':ver,pc={},key=x=>tb==='ahorro'?nomMov(x).replace('Ahorro → ',''):x.cat;
   items.filter(x=>tipoDe(x)===tb).forEach(x=>{const k=key(x);pc[k]=(pc[k]||0)+nz(x)});
   const ord=Object.entries(pc).sort((a,b)=>b[1]-a[1]),m2=ord.length?ord[0][1]:1,cc=tb==='ingreso'?' ti':tb==='ahorro'?' ta':'';
   if(filtro&&!pc[filtro])filtro='';
@@ -385,7 +399,7 @@ function renderMov(){
   for(const x of lista){
     if(x.fecha!==dia){dia=x.fecha;const d=parse(dia),gd=suma(lista.filter(y=>y.fecha===dia),'gasto');html+=`<div class="dia"><span>${DIAS[d.getDay()]} ${corto(d)}</span><span>${gd?'gastado '+F0(gd):''}</span></div>`}
     const t=tipoDe(x),c=t==='ingreso'?'in':t==='ahorro'?'ah':'',otra=x.moneda!==DC;
-    html+=`<button class="mv" data-e="${esc(x.id)}"><span class="dot ${c}">${t==='ingreso'?'+':t==='ahorro'?'$':'−'}</span><span>${t==='ahorro'?'Ahorro':esc(x.cat)}${x.nota?' · '+esc(x.nota):''}<small>${esc(cta(x.cuenta).nombre)}${otra?` · <span class="o">${fmt(x.monto,x.moneda)}</span>`:''}</small></span><span class="m ${c}">${t==='ingreso'?'+ ':t==='gasto'?'− ':''}${FD(nz(x))}</span></button>`;
+    html+=`<button class="mv" data-e="${esc(x.id)}"><span class="dot ${c}">${t==='ingreso'?'+':t==='ahorro'?'$':'−'}</span><span>${esc(nomMov(x))}${x.nota?' · '+esc(x.nota):''}<small>${esc(cta(x.cuenta).nombre)}${otra?` · <span class="o">${fmt(x.monto,x.moneda)}</span>`:''}</small></span><span class="m ${c}">${t==='ingreso'?'+ ':t==='gasto'?'− ':''}${FD(nz(x))}</span></button>`;
   }
   $('lista').innerHTML=html||'<div class="vacio">No hay movimientos. Usá los botones de arriba para anotar.</div>';
 }
@@ -396,7 +410,7 @@ function renderRes(){
   const pri=all.reduce((m,g)=>g.fecha<m?g.fecha:m,'9999'),pd=pri<'9999'?parse(pri):hoy;
   const prom=(f,n,ini,lim)=>{const v=[];for(let i=1;i<=n&&ini(i)>=lim;i++)v.push(G(f(-i)));return v.length?[v.reduce((s,x)=>s+x,0)/v.length,v.length]:[0,0]};
   const [ps,ns]=prom(sem,8,i=>add(lun,-7*i),lunes(pd)),[pm,nm]=prom(mes,6,i=>new Date(m1.getFullYear(),m1.getMonth()-i,1),new Date(pd.getFullYear(),pd.getMonth(),1));
-  const gs=G(sem(0)),gs1=G(sem(-1)),mm=mes(0),gm=G(mm),gm1=G(mes(-1)),im=suma(mm,'ingreso'),am=suma(mm,'ahorro'),bm=im-gm-am;
+  const gs=G(sem(0)),gs1=G(sem(-1)),mm=mes(0),gm=G(mm),gm1=G(mes(-1)),im=suma(mm,'ingreso'),am=suma(mm,'ahorro'),bm=im-gm;
   const proy=gm/hoy.getDate()*new Date(hoy.getFullYear(),hoy.getMonth()+1,0).getDate();
   const pc={};mm.filter(x=>tipoDe(x)==='gasto').forEach(x=>pc[x.cat]=(pc[x.cat]||0)+nz(x));const top=Object.entries(pc).sort((a,b)=>b[1]-a[1])[0];
   const cmp=(a,b,u)=>!b?'':a===b?'igual que '+u:`${a>b?'▲':'▼'} ${F0(Math.abs(a-b))} vs ${u}`;
@@ -404,12 +418,12 @@ function renderRes(){
   const S=[['g','Gastos',[['Esta semana',F0(gs),cmp(gs,gs1,'la anterior')],['Este mes',F0(gm),cmp(gm,gm1,'el anterior')],['Promedio semanal',ns?F0(ps):'—',ns?'últimas '+ns+' semanas':'sin datos aún'],['Promedio mensual',nm?F0(pm):'—',nm?'últimos '+nm+' meses':'sin datos aún'],['Proyección del mes',F0(proy),'si siguen a este ritmo'],['Lo que más pesa',top?esc(top[0]):'—',top&&gm?F0(top[1])+' · '+Math.round(top[1]/gm*100)+'% del mes':'']]],
     ['i','Ingresos',[['Este mes',F0(im),cmp(im,suma(mes(-1),'ingreso'),'el anterior')],['Promedio mensual',ip?F0(ip):'—','']]],
     ['a','Ahorros',[['Este mes',F0(am),''],['Promedio mensual',ap?F0(ap):'—',''],['Total anotado',F0(suma(all,'ahorro')),'desde el principio']]],
-    ['b','Balance',[['Este mes',im?F0(bm):'—',im?'ingresos − gastos − ahorros':'cargá los ingresos',im?cls(bm):'']]]];
+    ['b','Resultado',[['Este mes',im?F0(bm):'—',im?'ingresos − gastos':'cargá los ingresos',im?cls(bm):'']]]];
   $('kg').innerHTML=S.map(([c,t,ks])=>`<section class="card sec ${c}"><h2>${t}</h2><div class="kg">${ks.map(([l,v,s,k])=>`<div class="k"><span>${l}</span><b class="${k||''}">${v}</b><small>${s||''}</small></div>`).join('')}</div></section>`).join('');
   const pl={};mm.filter(x=>tipoDe(x)==='gasto').forEach(x=>{const k=lugarDe(cta(x.cuenta));pl[k]=(pl[k]||0)+nz(x)});
   barras($('lugar'),Object.entries(pl).sort((a,b)=>b[1]-a[1]));
   $('tmc').textContent='en '+DC;
-  $('tm').innerHTML=[0,-1,-2,-3,-4,-5].map(i=>{const a=mes(i),d=new Date(m1.getFullYear(),m1.getMonth()+i,1),x=suma(a,'ingreso'),y=G(a),z=suma(a,'ahorro'),b=x-y-z;
+  $('tm').innerHTML=[0,-1,-2,-3,-4,-5].map(i=>{const a=mes(i),d=new Date(m1.getFullYear(),m1.getMonth()+i,1),x=suma(a,'ingreso'),y=G(a),z=suma(a,'ahorro'),b=x-y;
     return `<tr><td>${MES[d.getMonth()]} ${String(d.getFullYear()).slice(2)}</td><td>${N0(x)}</td><td>${N0(y)}</td><td>${N0(z)}</td><td class="${x||y?cls(b):''}">${N0(b)}</td></tr>`}).join('');
 }
 
@@ -439,7 +453,7 @@ function renderGra(){
   $('glabel').textContent=gNom(gi,gp);$('gsub').textContent=act&&gp!=='todo'?'período actual':'';
   $('gprev').disabled=gp==='todo';$('gnext').disabled=act;
   const items=rango(gi,fin).filter(x=>tipoDe(x)===gt),tot=suma(items);
-  const grp={},key=x=>ga==='cta'||gt==='ahorro'?(cta(x.cuenta).nombre||'Sin cuenta'):x.cat;items.forEach(x=>{const k=key(x);grp[k]=(grp[k]||0)+nz(x)});
+  const grp={},key=x=>ga==='cta'?(cta(x.cuenta).nombre||'Sin cuenta'):gt==='ahorro'?nomMov(x).replace('Ahorro → ',''):x.cat;items.forEach(x=>{const k=key(x);grp[k]=(grp[k]||0)+nz(x)});
   let ord=Object.entries(grp).sort((a,b)=>b[1]-a[1]);
   if(ord.length>9){const r=ord.slice(8).reduce((s,x)=>s+x[1],0);ord=ord.slice(0,8).concat([['Otras',r]])}
   const R=70,C=2*Math.PI*R;let acc=0;
@@ -464,13 +478,13 @@ function promMes(t,n){const h=hoyD(),all=vis(),pri=all.reduce((m,g)=>g.fecha<m?g
   if(v.length)return [v.reduce((s,x)=>s+x,0)/v.length,v.length];
   const m=delMes(h);return [suma(m,t)/h.getDate()*new Date(h.getFullYear(),h.getMonth()+1,0).getDate(),0]}
 function renderPj(){
-  if(!pjSel)pjSel=cuentas.filter(c=>c.saldo>0).map(c=>c.id);
+  if(!pjSel)pjSel=cuentas.filter(c=>saldoAct(c)>0&&c.tipo!=='inversion').map(c=>c.id);
   pjSel=pjSel.filter(id=>cuentas.some(c=>c.id===id));
-  $('pjc').innerHTML=cuentas.map(c=>`<button data-pjc="${esc(c.id)}" aria-pressed="${pjSel.includes(c.id)}">${esc(c.nombre)}${c.saldo>0?' · '+fmt(c.saldo,c.moneda,0):''}</button>`).join('');
+  $('pjc').innerHTML=cuentas.map(c=>`<button data-pjc="${esc(c.id)}" aria-pressed="${pjSel.includes(c.id)}">${esc(c.nombre)}${saldoAct(c)>0?' · '+fmt(saldoAct(c),c.moneda,0):''}</button>`).join('');
   $('pjb').innerHTML=[['3','Promedio 3 meses'],['6','Promedio 6 meses'],['mes','Ritmo de este mes'],['man','Poner un monto']].map(([k,n])=>`<button data-pjb="${k}" aria-pressed="${k===pjB}">${n}</button>`).join('');
   $('pjmw').hidden=pjB!=='man';$('pjm').placeholder='Gasto mensual en '+DC;if(pjB==='man'&&$('pjm').value!==pjM&&document.activeElement!==$('pjm'))$('pjm').value=pjM;
   $('pji').checked=pjI;
-  const plata=cuentas.filter(c=>pjSel.includes(c.id)).reduce((s,c)=>s+(c.saldo||0)*(T[c.moneda]||1),0);
+  const plata=cuentas.filter(c=>pjSel.includes(c.id)).reduce((s,c)=>s+enNZ(c),0);
   let g,n=0,nota;
   if(pjB==='man'){g=(leerMonto(pjM)||0)*(T[DC]||1);nota='gasto puesto a mano'}
   else if(pjB==='mes'){[g]=promMes('gasto',0);nota='proyectando el gasto de este mes'}
@@ -492,12 +506,12 @@ $('pji').onchange=()=>{pjI=$('pji').checked;LS('pji',pjI?'1':'0');renderPj()};
 
 let editSaldo='';
 function renderPat(){
-  const cs=cuentas.filter(c=>!selL.length||selL.includes(lugarDe(c))),val=c=>(c.saldo||0)*(T[c.moneda]||1);
+  const cs=cuentas.filter(c=>!selL.length||selL.includes(lugarDe(c))),val=enNZ;
   $('ptot').textContent=F0(cs.reduce((s,c)=>s+val(c),0));
   const sin=cs.filter(c=>c.saldo==null).length;
-  $('pnota').textContent=sin?`${sin} cuenta${sin>1?'s':''} sin saldo cargado`:'convertido a '+DC;
+  $('pnota').textContent=(sin?`${sin} cuenta${sin>1?'s':''} sin saldo cargado · `:'')+'saldos al día con lo anotado, en '+DC;
   const grupos={};cs.forEach(c=>(grupos[lugarDe(c)]=grupos[lugarDe(c)]||[]).push(c));
-  $('plist').innerHTML=Object.entries(grupos).map(([l,arr])=>`<div class="grp"><span>${esc(l)}</span><span>${F0(arr.reduce((s,c)=>s+val(c),0))}</span></div>`+arr.map(c=>`<div class="cta"><div>${esc(c.nombre)}<br><small>${TIPOC[c.tipo]||''}${c.actualizado?' · al '+corto(new Date(c.actualizado)):''}</small></div><div class="r"><div class="s">${c.saldo==null?'—':fmt(c.saldo,c.moneda,0)}</div><small>${c.moneda!==DC&&c.saldo!=null?'≈ '+F0(val(c)):''}</small><br><button class="lnk" data-sal="${esc(c.id)}">${c.saldo==null?'Cargar saldo':'Actualizar'}</button></div>${editSaldo===c.id?`<div class="ed"><input type="text" inputmode="decimal" id="nsal" placeholder="Saldo en ${c.moneda}" value="${c.saldo??''}"><button class="btn" data-salok="${esc(c.id)}">Guardar</button></div>`:''}</div>`).join('')).join('')||'<div class="vacio">No hay cuentas elegidas.</div>';
+  $('plist').innerHTML=Object.entries(grupos).map(([l,arr])=>`<div class="grp"><span>${esc(l)}</span><span>${F0(arr.reduce((s,c)=>s+val(c),0))}</span></div>`+arr.map(c=>`<div class="cta"><div>${esc(c.nombre)}<br><small>${TIPOC[c.tipo]||''}${c.actualizado?' · cargado el '+corto(new Date(c.actualizado))+(Math.round(saldoAct(c))!==Math.round(c.saldo)?' + movimientos':''):''}</small></div><div class="r"><div class="s">${c.saldo==null?'—':fmt(saldoAct(c),c.moneda,0)}</div><small>${c.moneda!==DC&&c.saldo!=null?'≈ '+F0(val(c)):''}</small><br><button class="lnk" data-sal="${esc(c.id)}">${c.saldo==null?'Cargar saldo':'Actualizar'}</button></div>${editSaldo===c.id?`<div class="ed"><input type="text" inputmode="decimal" id="nsal" placeholder="Saldo en ${c.moneda}" value="${c.saldo==null?'':Math.round(saldoAct(c)*100)/100}"><button class="btn" data-salok="${esc(c.id)}">Guardar</button></div>`:''}</div>`).join('')).join('')||'<div class="vacio">No hay cuentas elegidas.</div>';
   renderPj();
   if(editSaldo){const i=$('nsal');if(i){i.focus();i.onkeydown=e=>{if(e.key==='Enter')document.querySelector('[data-salok]').click()}}}
   $('tas').innerHTML=monedas.filter(m=>m!=='NZD'&&T[m]&&(cuentas.some(c=>c.moneda===m)||['USD','UYU'].includes(m))).map(m=>`<div>1 ${m} = ${fmt(T[m],'NZD',T[m]<.1?4:2)} · 1 NZD = ${(1/T[m]).toLocaleString('es-UY',{maximumFractionDigits:2})} ${m}</div>`).join('')+`<small>${Tfecha?'Actualizado '+new Date(Tfecha).toLocaleString('es-UY',{day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'}):'Sin datos de cotización'} · Se actualiza solo cada 6 horas. Cada gasto guarda la cotización del día en que se anotó; los saldos usan la de hoy.</small>`;
@@ -507,7 +521,7 @@ function renderFij(){
   if(document.activeElement!==$('desde'))$('desde').value=desde;
   $('desdenota').textContent=desde?(ocultos?ocultos+(ocultos>1?' movimientos anteriores no se cuentan.':' movimiento anterior no se cuenta.'):'No hay movimientos anteriores a esa fecha.'):'Se cuenta todo.';
   const frec=r=>r.frec==='mes'?'Cada mes, el día '+r.dia:({sem:'Cada semana',['2sem']:'Cada 2 semanas',['3sem']:'Cada 3 semanas'}[r.frec]||'')+', los '+DIAS[r.dia];
-  $('recs').innerHTML=recs.length?recs.map(r=>{const c=cta(r.cuenta);return `<div class="mv" style="grid-template-columns:10px minmax(0,1fr) auto auto"><span class="dot ${r.tipo==='ingreso'?'in':r.tipo==='ahorro'?'ah':''}"></span><span>${r.tipo==='ahorro'?'Ahorro':esc(r.cat)}${r.nota?' · '+esc(r.nota):''}<small>${frec(r)} · ${esc(c.nombre)}</small></span><span class="m">${fmt(r.monto,c.moneda)}</span><button class="fil" data-dr="${esc(r.id)}">Quitar</button></div>`}).join('')+'<div class="vacio" style="font-size:13px">Al quitar uno, lo que ya se anotó queda.</div>':'<div class="vacio">Para que algo se anote solo (alquiler, Netflix, sueldo), tocá <b>+</b> y marcá <b>Se repite</b>.</div>';
+  $('recs').innerHTML=recs.length?recs.map(r=>{const c=cta(r.cuenta);return `<div class="mv" style="grid-template-columns:10px minmax(0,1fr) auto auto"><span class="dot ${r.tipo==='ingreso'?'in':r.tipo==='ahorro'?'ah':''}"></span><span>${esc(nomMov(r))}${r.nota?' · '+esc(r.nota):''}<small>${frec(r)} · ${esc(c.nombre)}</small></span><span class="m">${fmt(r.monto,c.moneda)}</span><button class="fil" data-dr="${esc(r.id)}">Quitar</button></div>`}).join('')+'<div class="vacio" style="font-size:13px">Al quitar uno, lo que ya se anotó queda.</div>':'<div class="vacio">Para que algo se anote solo (alquiler, Netflix, sueldo), tocá <b>+</b> y marcá <b>Se repite</b>.</div>';
   $('cuentas').innerHTML=cuentas.map(c=>`<div class="cta"><div>${esc(c.nombre)}<br><small>${esc(c.lugar||'Sin lugar')} · ${c.moneda} · ${TIPOC[c.tipo]||''}</small></div><button class="fil" data-dcu="${esc(c.id)}">Borrar</button></div>`).join('');
   if(!$('ncm').options.length)$('ncm').innerHTML=monedas.map(m=>`<option>${m}</option>`).join('');
   for(const t of ['gasto','ingreso'])$('c-'+t).innerHTML=cats[t].map(c=>`<button data-dc="${t}" data-n="${esc(c)}">${esc(c)} ✕</button>`).join('')||'<span class="vacio">Sin categorías</span>';
@@ -516,7 +530,7 @@ function renderFij(){
 // Formulario
 function abrir(m,tipo){
   const ult=LS('gc');
-  F=m?{...m,tipo:tipoDe(m)}:{id:null,tipo:tipo||F.tipo||'gasto',cat:'',cuenta:cuentas.some(c=>c.id===ult)?ult:(cuentas[0]||{}).id};
+  F=m?{...m,tipo:tipoDe(m),dest:destino(m)}:{id:null,tipo:tipo||F.tipo||'gasto',cat:'',cuenta:cuentas.some(c=>c.id===ult)?ult:(cuentas[0]||{}).id};
   
   $('monto').value=m?String(m.monto).replace('.',','):'';
   $('fecha').value=m?m.fecha:iso(new Date());$('nota').value=m?m.nota||'':'';
@@ -531,6 +545,10 @@ function pintarForm(){
   $('fcu').innerHTML=cuentas.map(c=>`<button type="button" data-cu="${esc(c.id)}" aria-pressed="${c.id===F.cuenta}">${esc(c.nombre)}</button>`).join('');
   $('fsim').textContent=SIM[cta(F.cuenta).moneda]||cta(F.cuenta).moneda;conv();
   $('fcatw').hidden=F.tipo==='ahorro';
+  $('fculb').textContent={gasto:'Se paga desde',ingreso:'Entra en',ahorro:'Sale de'}[F.tipo];
+  $('fdestw').hidden=F.tipo!=='ahorro';
+  if(F.tipo==='ahorro'){const ds=cuentas.filter(c=>c.id!==F.cuenta);if(!ds.some(c=>c.id===F.dest))F.dest=(ds.find(c=>c.tipo!=='diario')||ds[0]||{}).id||'';
+    $('fdest').innerHTML=ds.map(c=>`<button type="button" data-de="${esc(c.id)}" aria-pressed="${c.id===F.dest}">${esc(c.nombre)}</button>`).join('')||'<span class="vacio">Creá otra cuenta en Ajustes</span>'}
   const l=cats[F.tipo]||[];if(F.tipo!=='ahorro'&&!l.includes(F.cat))F.cat=l[0]||'Otros';
   $('fcat').innerHTML=l.map(c=>`<button type="button" data-c="${esc(c)}" aria-pressed="${c===F.cat}">${esc(c)}</button>`).join('')+'<button type="button" class="mas" id="fmas">+ Otra</button>';
   $('guardar').textContent=F.id?'Guardar cambios':'Guardar '+F.tipo;
@@ -542,6 +560,7 @@ async function nuevaCat(tipo,n,input){
 }
 
 $('ftipo').onclick=e=>{const b=e.target.closest('button');if(b){F.tipo=b.dataset.t;pintarForm()}};
+$('fdest').onclick=e=>{const b=e.target.closest('button');if(b){F.dest=b.dataset.de;pintarForm()}};
 $('fcu').onclick=e=>{const b=e.target.closest('button');if(b){F.cuenta=b.dataset.cu;pintarForm()}};
 $('monto').oninput=conv;
 $('fcat').onclick=e=>{const b=e.target.closest('button');if(!b)return;if(b.id==='fmas'){$('fnueva').hidden=false;$('fncat').focus();return}F.cat=b.dataset.c;pintarForm()};
@@ -552,18 +571,18 @@ $('cerrar').onclick=$('cancelar').onclick=cerrar;
 $('ov').onclick=e=>{if(e.target===$('ov'))cerrar()};
 document.addEventListener('keydown',e=>{if(e.key==='Escape')cerrar()});
 $('borrar').onclick=e=>confirmar(e.currentTarget,async()=>{
-  const id=F.id,antes=movs;movs=movs.filter(x=>x.id!==id);cerrar();render();
+  const id=F.id,antes=movs;movs=movs.filter(x=>x.id!==id);todosMovs=todosMovs.filter(x=>x.id!==id);cerrar();render();
   try{await run('delMov',id);toast('Borrado')}catch(err){movs=antes;render();toast('No se pudo borrar')}});
 $('f').onsubmit=async e=>{
   e.preventDefault();
   const monto=leerMonto($('monto').value);if(!(monto>0)){$('fmsg').textContent='Poné un monto mayor a 0.';$('monto').focus();return}
   if(!F.cuenta){$('fmsg').textContent='Elegí una cuenta (podés crear una en Ajustes).';return}
-  const g={tipo:F.tipo,monto,cat:F.tipo==='ahorro'?'Ahorro':F.cat,fecha:$('fecha').value||iso(new Date()),nota:$('nota').value.trim(),cuenta:F.cuenta};
+  const g={tipo:F.tipo,monto,cat:F.tipo==='ahorro'?(F.dest||'Ahorro'):F.cat,fecha:$('fecha').value||iso(new Date()),nota:$('nota').value.trim(),cuenta:F.cuenta};
   LS('gc',F.cuenta);
   $('guardar').disabled=true;$('fmsg').textContent='Guardando…';
   try{
     if(F.id){const r=await run('updMov',F.id,g);Object.assign(movs.find(x=>x.id===F.id)||{},g,r);toast('Cambios guardados')}
-    else{g.frec=$('rep').checked?$('frec').value:'';g.ts=Date.now();const r=await run('addMov',g);Object.assign(g,r);if(desde&&g.fecha<desde){ocultos++;toast('Guardado, pero es anterior al '+corto(parse(desde))+' y no se cuenta')}else{movs.push(g);toast('Anotado: '+fmt(monto,g.moneda))}if(g.frec)cargar()}
+    else{g.frec=$('rep').checked?$('frec').value:'';g.ts=Date.now();const r=await run('addMov',g);Object.assign(g,r);if(desde&&g.fecha<desde){ocultos++;toast('Guardado, pero es anterior al '+corto(parse(desde))+' y no se cuenta')}else{movs.push(g);toast('Anotado: '+fmt(monto,g.moneda))}todosMovs.push(g);if(g.frec)cargar()}
     cerrar();per=inicio(parse(g.fecha));filtro='';vista='mov';if(ver!=='todo')ver=g.tipo;render();
   }catch(err){$('fmsg').textContent='No se pudo guardar. Revisá la conexión y probá de nuevo.'}
   $('guardar').disabled=false;
@@ -582,7 +601,7 @@ $('recargar').onclick=()=>{cargar();toast('Actualizando…')};
 $('fl').onclick=e=>{const b=e.target.closest('button');if(!b)return;const l=b.dataset.s;
   selL=!l?[]:selL.includes(l)?selL.filter(x=>x!==l):[...selL,l];if(selL.length===lugares().length)selL=[];LS('gsell',JSON.stringify(selL));render()};
 $('mon').onclick=e=>{const b=e.target.closest('button');if(b){DC=b.dataset.dc;LS('gdc',DC);render()}};
-document.addEventListener('click',e=>{const q=e.target.closest('[data-qa]');if(q)return abrir(null,q.dataset.qa);
+document.addEventListener('click',e=>{if(e.target.closest('[data-irpat]')){vista='pat';render();scrollTo(0,0);return}const q=e.target.closest('[data-qa]');if(q)return abrir(null,q.dataset.qa);
   const v=e.target.closest('[data-ver]');if(v){ver=v.dataset.ver;filtro='';LS('gver',ver);render()}});
 $('ncok').onclick=async()=>{
   const c={nombre:$('ncn').value.trim(),lugar:$('ncl').value.trim(),moneda:$('ncm').value,tipo:$('nct').value};
@@ -613,7 +632,7 @@ function usar(d){
   cats=Object.assign({gasto:[],ingreso:[]},d.cats);
   const def=(cuentas.find(c=>c.moneda==='NZD')||cuentas[0]||{}).id||'';
   const todos=d.movs.map(g=>{if(!g.cuenta)g.cuenta=def;if(!g.moneda)g.moneda=cta(g.cuenta).moneda;return g});
-  movs=todos.filter(g=>!desde||g.fecha>=desde);ocultos=todos.length-movs.length;
+  todosMovs=todos;movs=todos.filter(g=>!desde||g.fecha>=desde);ocultos=todos.length-movs.length;
 }
 async function cargar(){
   if(!CFG){$('setup').classList.add('on');return}
