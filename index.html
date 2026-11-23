@@ -249,6 +249,10 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 
 <main class="wrap" id="v-fij" hidden>
   <section class="card full"><h2>Conexión</h2><p class="vacio" style="margin:0 0 10px">Datos guardados en tu planilla de Google Drive.</p><button class="btn" id="reconf">Cambiar conexión</button></section>
+  <section class="card full"><h2>Empezar a contar desde</h2>
+    <p class="vacio" style="margin:0 0 10px">Lo anotado antes de esta fecha no se cuenta en ningún lado, pero sigue guardado en la planilla. Los gastos fijos cuentan desde su primer cobro a partir de esta fecha.</p>
+    <div class="add" style="margin:0"><input type="date" id="desde"><button class="btn" id="desdeok">Guardar</button></div>
+    <p class="vacio" id="desdenota" style="font-size:13px;margin:8px 0 0"></p></section>
   <section class="card"><h2>Gastos fijos</h2><div id="recs"></div></section>
   <section class="card"><h2>Cuentas y lugares</h2><div id="cuentas"></div>
     <div class="nc"><input type="text" id="ncn" placeholder="Nombre, ej: Uruguay pesos" maxlength="40"><input type="text" id="ncl" placeholder="Lugar, ej: Uruguay" maxlength="40">
@@ -296,6 +300,7 @@ input[type=text],input[type=date],select{height:48px;padding:0 12px;border:1px s
 <script>
 {
 const $=id=>document.getElementById(id);
+const DESDE_DEF='2026-11-19';let desde=(()=>{try{return localStorage.getItem('gdesde')||DESDE_DEF}catch(e){return DESDE_DEF}})(),ocultos=0;
 let CFG=null;try{CFG=JSON.parse(localStorage.getItem('gcfg')||'null')}catch(e){}
 async function llamar(cfg,fn,a){
   const r=await fetch(cfg.u,{method:'POST',body:JSON.stringify({k:cfg.k,fn,a})});
@@ -499,6 +504,8 @@ function renderPat(){
 }
 
 function renderFij(){
+  if(document.activeElement!==$('desde'))$('desde').value=desde;
+  $('desdenota').textContent=desde?(ocultos?ocultos+(ocultos>1?' movimientos anteriores no se cuentan.':' movimiento anterior no se cuenta.'):'No hay movimientos anteriores a esa fecha.'):'Se cuenta todo.';
   const frec=r=>r.frec==='mes'?'Cada mes, el día '+r.dia:({sem:'Cada semana',['2sem']:'Cada 2 semanas',['3sem']:'Cada 3 semanas'}[r.frec]||'')+', los '+DIAS[r.dia];
   $('recs').innerHTML=recs.length?recs.map(r=>{const c=cta(r.cuenta);return `<div class="mv" style="grid-template-columns:10px minmax(0,1fr) auto auto"><span class="dot ${r.tipo==='ingreso'?'in':r.tipo==='ahorro'?'ah':''}"></span><span>${r.tipo==='ahorro'?'Ahorro':esc(r.cat)}${r.nota?' · '+esc(r.nota):''}<small>${frec(r)} · ${esc(c.nombre)}</small></span><span class="m">${fmt(r.monto,c.moneda)}</span><button class="fil" data-dr="${esc(r.id)}">Quitar</button></div>`}).join('')+'<div class="vacio" style="font-size:13px">Al quitar uno, lo que ya se anotó queda.</div>':'<div class="vacio">Para que algo se anote solo (alquiler, Netflix, sueldo), tocá <b>+</b> y marcá <b>Se repite</b>.</div>';
   $('cuentas').innerHTML=cuentas.map(c=>`<div class="cta"><div>${esc(c.nombre)}<br><small>${esc(c.lugar||'Sin lugar')} · ${c.moneda} · ${TIPOC[c.tipo]||''}</small></div><button class="fil" data-dcu="${esc(c.id)}">Borrar</button></div>`).join('');
@@ -556,7 +563,7 @@ $('f').onsubmit=async e=>{
   $('guardar').disabled=true;$('fmsg').textContent='Guardando…';
   try{
     if(F.id){const r=await run('updMov',F.id,g);Object.assign(movs.find(x=>x.id===F.id)||{},g,r);toast('Cambios guardados')}
-    else{g.frec=$('rep').checked?$('frec').value:'';g.ts=Date.now();const r=await run('addMov',g);Object.assign(g,r);movs.push(g);toast('Anotado: '+fmt(monto,g.moneda));if(g.frec)cargar()}
+    else{g.frec=$('rep').checked?$('frec').value:'';g.ts=Date.now();const r=await run('addMov',g);Object.assign(g,r);if(desde&&g.fecha<desde){ocultos++;toast('Guardado, pero es anterior al '+corto(parse(desde))+' y no se cuenta')}else{movs.push(g);toast('Anotado: '+fmt(monto,g.moneda))}if(g.frec)cargar()}
     cerrar();per=inicio(parse(g.fecha));filtro='';vista='mov';if(ver!=='todo')ver=g.tipo;render();
   }catch(err){$('fmsg').textContent='No se pudo guardar. Revisá la conexión y probá de nuevo.'}
   $('guardar').disabled=false;
@@ -605,7 +612,8 @@ function usar(d){
   cuentas=d.cuentas||[];recs=d.recs||[];T=d.tasas||{NZD:1};Tfecha=d.tasasFecha||'';monedas=d.monedas||monedas;
   cats=Object.assign({gasto:[],ingreso:[]},d.cats);
   const def=(cuentas.find(c=>c.moneda==='NZD')||cuentas[0]||{}).id||'';
-  movs=d.movs.map(g=>{if(!g.cuenta)g.cuenta=def;if(!g.moneda)g.moneda=cta(g.cuenta).moneda;return g});
+  const todos=d.movs.map(g=>{if(!g.cuenta)g.cuenta=def;if(!g.moneda)g.moneda=cta(g.cuenta).moneda;return g});
+  movs=todos.filter(g=>!desde||g.fecha>=desde);ocultos=todos.length-movs.length;
 }
 async function cargar(){
   if(!CFG){$('setup').classList.add('on');return}
@@ -628,6 +636,7 @@ $('sf').onsubmit=async e=>{
   catch(err){$('smsg').textContent=String(err.message)==='clave'?'La clave no coincide.':'No pude conectar. Revisá la dirección y que la implementación tenga acceso "Cualquier persona".'}
   $('sok').disabled=false;
 };
+$('desdeok').onclick=()=>{desde=$('desde').value;try{localStorage.setItem('gdesde',desde)}catch(e){}toast(desde?'Se cuenta desde el '+corto(parse(desde)):'Se cuenta todo');cargar()};
 $('reconf').onclick=()=>{if(CFG){$('su').value=CFG.u;$('sk').value=CFG.k}$('smsg').textContent='';$('scan').hidden=!CFG;$('setup').classList.add('on')};
 $('scan').onclick=()=>$('setup').classList.remove('on');
 try{const c=JSON.parse(localStorage.getItem('gdata')||'null');if(c&&CFG)usar(c)}catch(e){}
